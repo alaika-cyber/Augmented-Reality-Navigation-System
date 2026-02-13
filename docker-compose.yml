@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  ar-navigation:
+    build: .
+    container_name: ar-navigation
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - YOLO_MODEL_PATH=yolov8n.pt
+      - YOLO_DEVICE=cpu
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./models:/app/models
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

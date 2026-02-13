@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0a0a0a">
+    <title>AR Navigation System</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="manifest" href="/static/manifest.json">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <h1>AR Navigation</h1>
+            <p id="loading-status">Initializing system...</p>
+            <div class="loading-steps">
+                <div class="step" id="step-camera">
+                    <span class="step-icon">📷</span>
+                    <span class="step-text">Camera</span>
+                    <span class="step-status">...</span>
+                </div>
+                <div class="step" id="step-gps">
+                    <span class="step-icon">📍</span>
+                    <span class="step-text">GPS</span>
+                    <span class="step-status">...</span>
+                </div>
+                <div class="step" id="step-ai">
+                    <span class="step-icon">🧠</span>
+                    <span class="step-text">AI Engine</span>
+                    <span class="step-status">...</span>
+                </div>
+                <div class="step" id="step-voice">
+                    <span class="step-icon">🔊</span>
+                    <span class="step-text">Voice</span>
+                    <span class="step-status">...</span>
+                </div>
+            </div>
+            <button id="start-btn" class="start-btn hidden" onclick="app.start()">
+                Start Navigation
+            </button>
+        </div>
+    </div>
+
+    <!-- Main AR View -->
+    <div id="ar-view" class="ar-view hidden">
+        <!-- Camera Feed -->
+        <video id="camera-feed" autoplay playsinline muted></video>
+        <canvas id="ar-canvas"></canvas>
+
+        <!-- Hidden canvas for frame capture -->
+        <canvas id="capture-canvas" class="hidden"></canvas>
+
+        <!-- Top Status Bar -->
+        <div class="status-bar">
+            <div class="status-item" id="fps-display">
+                <span class="status-label">FPS</span>
+                <span class="status-value" id="fps-value">0</span>
+            </div>
+            <div class="status-item" id="gps-status">
+                <span class="status-icon">📍</span>
+                <span class="status-value" id="gps-value">--</span>
+            </div>
+            <div class="status-item" id="connection-status">
+                <span class="status-dot" id="conn-dot"></span>
+                <span class="status-value" id="conn-value">Connecting</span>
+            </div>
+        </div>
+
+        <!-- Navigation Command Display -->
+        <div class="nav-command-container">
+            <div id="nav-command" class="nav-command">
+                <div id="nav-icon" class="nav-icon">⬆️</div>
+                <div id="nav-message" class="nav-message">Initializing...</div>
+            </div>
+        </div>
+
+        <!-- Detection Info Panel -->
+        <div id="detection-panel" class="detection-panel">
+            <div id="detection-list" class="detection-list"></div>
+        </div>
+
+        <!-- Bottom Controls -->
+        <div class="bottom-controls">
+            <button class="control-btn" id="emergency-btn" onclick="app.triggerEmergency()">
+                <span class="btn-icon">🆘</span>
+                <span class="btn-label">SOS</span>
+            </button>
+            <button class="control-btn" id="voice-toggle" onclick="app.toggleVoice()">
+                <span class="btn-icon" id="voice-icon">🔊</span>
+                <span class="btn-label">Voice</span>
+            </button>
+            <button class="control-btn" id="location-btn" onclick="app.shareLocation()">
+                <span class="btn-icon">📍</span>
+                <span class="btn-label">Share</span>
+            </button>
+            <button class="control-btn" id="settings-btn" onclick="app.toggleSettings()">
+                <span class="btn-icon">⚙️</span>
+                <span class="btn-label">Settings</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Emergency Modal -->
+    <div id="emergency-modal" class="modal hidden">
+        <div class="modal-content emergency-content">
+            <h2>🆘 Emergency Alert</h2>
+            <p id="emergency-text">Generating alert...</p>
+            <div class="emergency-actions">
+                <a id="emergency-maps-link" href="#" target="_blank" class="modal-btn primary">
+                    Open Maps
+                </a>
+                <button class="modal-btn" onclick="app.copyEmergencyText()">
+                    Copy Message
+                </button>
+                <button class="modal-btn cancel" onclick="app.closeEmergency()">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>⚙️ Settings</h2>
+            <div class="settings-group">
+                <label class="setting-item">
+                    <span>Voice Guidance</span>
+                    <input type="checkbox" id="setting-voice" checked>
+                </label>
+                <label class="setting-item">
+                    <span>Show Detections</span>
+                    <input type="checkbox" id="setting-detections" checked>
+                </label>
+                <label class="setting-item">
+                    <span>Voice Speed</span>
+                    <input type="range" id="setting-voice-speed" min="0.5" max="2" step="0.1" value="1">
+                </label>
+                <label class="setting-item">
+                    <span>Detection Sensitivity</span>
+                    <select id="setting-sensitivity">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </label>
+            </div>
+            <button class="modal-btn" onclick="app.toggleSettings()">Close</button>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/js/camera.js"></script>
+    <script src="/static/js/websocket.js"></script>
+    <script src="/static/js/tts.js"></script>
+    <script src="/static/js/gps.js"></script>
+    <script src="/static/js/ar-renderer.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

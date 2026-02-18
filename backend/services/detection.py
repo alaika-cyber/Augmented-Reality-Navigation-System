@@ -2,7 +2,10 @@
 YOLOv8 Object Detection Service.
 
 Handles model loading, frame inference, and result parsing.
-Detects: person, vehicle, stairs, wall, pothole, and generic obstacles.
+Detects all 80 COCO object classes plus custom categories including:
+person, vehicles, animals, glass/cups, utensils, furniture, electronics,
+appliances, food, sports equipment, traffic signs, plants, doors, windows,
+walls, stairs, potholes, and more.
 """
 
 from __future__ import annotations
@@ -20,28 +23,120 @@ from backend.models.schemas import DetectionResult, ObjectCategory, Zone
 logger = logging.getLogger(__name__)
 
 
-# Mapping from COCO class names to our categories
+# ── Full COCO 80-class → ObjectCategory mapping ──
 COCO_TO_CATEGORY = {
+    # People
     "person": ObjectCategory.PERSON,
+
+    # Vehicles
     "bicycle": ObjectCategory.VEHICLE,
     "car": ObjectCategory.VEHICLE,
     "motorcycle": ObjectCategory.VEHICLE,
+    "airplane": ObjectCategory.VEHICLE,
     "bus": ObjectCategory.VEHICLE,
-    "truck": ObjectCategory.VEHICLE,
     "train": ObjectCategory.VEHICLE,
-    "bench": ObjectCategory.OBSTACLE,
-    "chair": ObjectCategory.OBSTACLE,
-    "couch": ObjectCategory.OBSTACLE,
-    "dining table": ObjectCategory.OBSTACLE,
-    "suitcase": ObjectCategory.OBSTACLE,
-    "backpack": ObjectCategory.OBSTACLE,
-    "fire hydrant": ObjectCategory.OBSTACLE,
-    "stop sign": ObjectCategory.OBSTACLE,
-    "parking meter": ObjectCategory.OBSTACLE,
+    "truck": ObjectCategory.VEHICLE,
+    "boat": ObjectCategory.VEHICLE,
+
+    # Traffic / road signs
+    "traffic light": ObjectCategory.TRAFFIC_SIGN,
+    "fire hydrant": ObjectCategory.TRAFFIC_SIGN,
+    "stop sign": ObjectCategory.TRAFFIC_SIGN,
+    "parking meter": ObjectCategory.TRAFFIC_SIGN,
+
+    # Animals
+    "bird": ObjectCategory.ANIMAL,
+    "cat": ObjectCategory.ANIMAL,
+    "dog": ObjectCategory.ANIMAL,
+    "horse": ObjectCategory.ANIMAL,
+    "sheep": ObjectCategory.ANIMAL,
+    "cow": ObjectCategory.ANIMAL,
+    "elephant": ObjectCategory.ANIMAL,
+    "bear": ObjectCategory.ANIMAL,
+    "zebra": ObjectCategory.ANIMAL,
+    "giraffe": ObjectCategory.ANIMAL,
+
+    # Personal items / bags
+    "backpack": ObjectCategory.PERSONAL_ITEM,
+    "umbrella": ObjectCategory.PERSONAL_ITEM,
+    "handbag": ObjectCategory.PERSONAL_ITEM,
+    "tie": ObjectCategory.PERSONAL_ITEM,
+    "suitcase": ObjectCategory.PERSONAL_ITEM,
+
+    # Sports & recreation
+    "frisbee": ObjectCategory.SPORTS,
+    "skis": ObjectCategory.SPORTS,
+    "snowboard": ObjectCategory.SPORTS,
+    "sports ball": ObjectCategory.SPORTS,
+    "kite": ObjectCategory.SPORTS,
+    "baseball bat": ObjectCategory.SPORTS,
+    "baseball glove": ObjectCategory.SPORTS,
+    "skateboard": ObjectCategory.SPORTS,
+    "surfboard": ObjectCategory.SPORTS,
+    "tennis racket": ObjectCategory.SPORTS,
+
+    # Glass / drinkware / containers
+    "bottle": ObjectCategory.GLASS,
+    "wine glass": ObjectCategory.GLASS,
+    "cup": ObjectCategory.GLASS,
+    "vase": ObjectCategory.GLASS,
+
+    # Utensils / kitchenware
+    "fork": ObjectCategory.UTENSIL,
+    "knife": ObjectCategory.UTENSIL,
+    "spoon": ObjectCategory.UTENSIL,
+    "bowl": ObjectCategory.UTENSIL,
+
+    # Food items
+    "banana": ObjectCategory.FOOD,
+    "apple": ObjectCategory.FOOD,
+    "sandwich": ObjectCategory.FOOD,
+    "orange": ObjectCategory.FOOD,
+    "broccoli": ObjectCategory.FOOD,
+    "carrot": ObjectCategory.FOOD,
+    "hot dog": ObjectCategory.FOOD,
+    "pizza": ObjectCategory.FOOD,
+    "donut": ObjectCategory.FOOD,
+    "cake": ObjectCategory.FOOD,
+
+    # Furniture
+    "chair": ObjectCategory.FURNITURE,
+    "couch": ObjectCategory.FURNITURE,
+    "bed": ObjectCategory.FURNITURE,
+    "dining table": ObjectCategory.FURNITURE,
+    "bench": ObjectCategory.FURNITURE,
+
+    # Appliances
+    "toilet": ObjectCategory.APPLIANCE,
+    "microwave": ObjectCategory.APPLIANCE,
+    "oven": ObjectCategory.APPLIANCE,
+    "toaster": ObjectCategory.APPLIANCE,
+    "sink": ObjectCategory.APPLIANCE,
+    "refrigerator": ObjectCategory.APPLIANCE,
+
+    # Electronics
+    "tv": ObjectCategory.ELECTRONICS,
+    "laptop": ObjectCategory.ELECTRONICS,
+    "mouse": ObjectCategory.ELECTRONICS,
+    "remote": ObjectCategory.ELECTRONICS,
+    "keyboard": ObjectCategory.ELECTRONICS,
+    "cell phone": ObjectCategory.ELECTRONICS,
+
+    # Plants
+    "potted plant": ObjectCategory.PLANT,
+
+    # Misc / other COCO items → obstacle
+    "book": ObjectCategory.PERSONAL_ITEM,
+    "clock": ObjectCategory.ELECTRONICS,
+    "scissors": ObjectCategory.UTENSIL,
+    "teddy bear": ObjectCategory.PERSONAL_ITEM,
+    "hair drier": ObjectCategory.APPLIANCE,
+    "toothbrush": ObjectCategory.PERSONAL_ITEM,
 }
 
 # Custom model class mapping (if using a custom-trained model)
 CUSTOM_CATEGORY_MAP = {
+    # Original custom classes
     "stairs": ObjectCategory.STAIRS,
     "staircase": ObjectCategory.STAIRS,
     "wall": ObjectCategory.WALL,
@@ -51,6 +146,92 @@ CUSTOM_CATEGORY_MAP = {
     "vehicle": ObjectCategory.VEHICLE,
     "car": ObjectCategory.VEHICLE,
     "bike": ObjectCategory.VEHICLE,
+    "motorcycle": ObjectCategory.VEHICLE,
+    "bus": ObjectCategory.VEHICLE,
+    "truck": ObjectCategory.VEHICLE,
+
+    # Doors & windows
+    "door": ObjectCategory.DOOR,
+    "gate": ObjectCategory.DOOR,
+    "window": ObjectCategory.WINDOW,
+    "glass window": ObjectCategory.WINDOW,
+    "glass door": ObjectCategory.DOOR,
+
+    # Water hazards
+    "water": ObjectCategory.WATER,
+    "puddle": ObjectCategory.WATER,
+    "flood": ObjectCategory.WATER,
+    "pond": ObjectCategory.WATER,
+    "pool": ObjectCategory.WATER,
+
+    # Glass / breakable
+    "glass": ObjectCategory.GLASS,
+    "bottle": ObjectCategory.GLASS,
+    "cup": ObjectCategory.GLASS,
+    "mirror": ObjectCategory.GLASS,
+    "carry glass": ObjectCategory.GLASS,
+    "drinking glass": ObjectCategory.GLASS,
+
+    # Animals
+    "dog": ObjectCategory.ANIMAL,
+    "cat": ObjectCategory.ANIMAL,
+    "bird": ObjectCategory.ANIMAL,
+    "horse": ObjectCategory.ANIMAL,
+    "cow": ObjectCategory.ANIMAL,
+    "sheep": ObjectCategory.ANIMAL,
+    "animal": ObjectCategory.ANIMAL,
+    "snake": ObjectCategory.ANIMAL,
+    "rat": ObjectCategory.ANIMAL,
+
+    # Utensils
+    "knife": ObjectCategory.UTENSIL,
+    "fork": ObjectCategory.UTENSIL,
+    "spoon": ObjectCategory.UTENSIL,
+    "plate": ObjectCategory.UTENSIL,
+    "bowl": ObjectCategory.UTENSIL,
+    "pan": ObjectCategory.UTENSIL,
+    "pot": ObjectCategory.UTENSIL,
+    "utensil": ObjectCategory.UTENSIL,
+
+    # Furniture
+    "chair": ObjectCategory.FURNITURE,
+    "table": ObjectCategory.FURNITURE,
+    "bench": ObjectCategory.FURNITURE,
+    "couch": ObjectCategory.FURNITURE,
+    "sofa": ObjectCategory.FURNITURE,
+    "bed": ObjectCategory.FURNITURE,
+    "desk": ObjectCategory.FURNITURE,
+    "shelf": ObjectCategory.FURNITURE,
+    "cabinet": ObjectCategory.FURNITURE,
+    "wardrobe": ObjectCategory.FURNITURE,
+
+    # Electronics
+    "tv": ObjectCategory.ELECTRONICS,
+    "laptop": ObjectCategory.ELECTRONICS,
+    "phone": ObjectCategory.ELECTRONICS,
+    "computer": ObjectCategory.ELECTRONICS,
+    "monitor": ObjectCategory.ELECTRONICS,
+
+    # Appliances
+    "refrigerator": ObjectCategory.APPLIANCE,
+    "washing machine": ObjectCategory.APPLIANCE,
+    "microwave": ObjectCategory.APPLIANCE,
+    "oven": ObjectCategory.APPLIANCE,
+    "stove": ObjectCategory.APPLIANCE,
+
+    # Traffic / road
+    "traffic light": ObjectCategory.TRAFFIC_SIGN,
+    "stop sign": ObjectCategory.TRAFFIC_SIGN,
+    "fire hydrant": ObjectCategory.TRAFFIC_SIGN,
+    "road sign": ObjectCategory.TRAFFIC_SIGN,
+    "crosswalk": ObjectCategory.TRAFFIC_SIGN,
+
+    # Food
+    "food": ObjectCategory.FOOD,
+
+    # Plants
+    "plant": ObjectCategory.PLANT,
+    "tree": ObjectCategory.PLANT,
 }
 
 

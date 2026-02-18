@@ -2,9 +2,13 @@
 Navigation Decision Engine.
 
 Implements the core decision logic:
-  - Obstacle detected → determine free direction
+  - Obstacle / furniture detected → determine free direction
   - Stairs detected → warn user
   - Vehicle approaching → alert user
+  - Animal detected → caution / avoid
+  - Glass / water / utensils → careful navigation
+  - Door / window → informational awareness
+  - Traffic signs → awareness alerts
   - Path clear → go straight
 
 Priority system ensures the most critical instruction is spoken.
@@ -32,6 +36,17 @@ PRIORITY_INFO = 2
 PRIORITY_CAUTION = 5
 PRIORITY_WARNING = 7
 PRIORITY_CRITICAL = 9
+
+# Categories that physically block the path
+BLOCKING_CATEGORIES = {
+    ObjectCategory.OBSTACLE,
+    ObjectCategory.PERSON,
+    ObjectCategory.WALL,
+    ObjectCategory.FURNITURE,
+    ObjectCategory.APPLIANCE,
+    ObjectCategory.DOOR,
+    ObjectCategory.PLANT,
+}
 
 
 class DecisionEngine:
@@ -74,7 +89,6 @@ class DecisionEngine:
         vehicles = [d for d in detections if d.category == ObjectCategory.VEHICLE]
         if vehicles:
             best_vehicle = max(vehicles, key=lambda v: v.confidence)
-            # Large bbox = close vehicle
             bbox_area = (best_vehicle.bbox[2] - best_vehicle.bbox[0]) * (
                 best_vehicle.bbox[3] - best_vehicle.bbox[1]
             )
@@ -82,7 +96,7 @@ class DecisionEngine:
                 commands.append(
                     NavigationCommand(
                         action=NavigationAction.STOP,
-                        message="Vehicle very close! Stop immediately!",
+                        message=f"Vehicle very close! Stop immediately! ({best_vehicle.label})",
                         priority=PRIORITY_CRITICAL,
                         speak=True,
                     )
@@ -91,8 +105,48 @@ class DecisionEngine:
                 commands.append(
                     NavigationCommand(
                         action=NavigationAction.CAUTION,
-                        message="Vehicle approaching. Stay alert.",
+                        message=f"Vehicle detected: {best_vehicle.label}. Stay alert.",
                         priority=PRIORITY_WARNING,
+                        speak=True,
+                    )
+                )
+
+        # --- Check for animals ---
+        animals = [d for d in detections if d.category == ObjectCategory.ANIMAL]
+        if animals:
+            best_animal = max(animals, key=lambda a: a.confidence)
+            bbox_area = (best_animal.bbox[2] - best_animal.bbox[0]) * (
+                best_animal.bbox[3] - best_animal.bbox[1]
+            )
+            # Large animals (horse, cow, bear, etc.) are more dangerous
+            large_animals = {"horse", "cow", "elephant", "bear", "zebra", "giraffe"}
+            is_large = any(lbl in best_animal.label.lower() for lbl in large_animals)
+
+            if is_large or bbox_area > 0.12:
+                commands.append(
+                    NavigationCommand(
+                        action=NavigationAction.STOP,
+                        message=f"Large animal ahead: {best_animal.label}! Stop and keep distance.",
+                        priority=PRIORITY_CRITICAL,
+                        speak=True,
+                    )
+                )
+            elif best_animal.zone == Zone.CENTER:
+                commands.append(
+                    NavigationCommand(
+                        action=NavigationAction.CAUTION,
+                        message=f"Animal ahead: {best_animal.label}. Proceed with caution.",
+                        priority=PRIORITY_WARNING,
+                        speak=True,
+                    )
+                )
+            else:
+                side = "left" if best_animal.zone == Zone.LEFT else "right"
+                commands.append(
+                    NavigationCommand(
+                        action=NavigationAction.CAUTION,
+                        message=f"Animal on your {side}: {best_animal.label}.",
+                        priority=PRIORITY_CAUTION,
                         speak=True,
                     )
                 )
@@ -108,6 +162,49 @@ class DecisionEngine:
                     speak=True,
                 )
             )
+
+        # --- Check for water hazards ---
+        water = [d for d in detections if d.category == ObjectCategory.WATER]
+        if water:
+            best_water = max(water, key=lambda w: w.confidence)
+            if best_water.zone == Zone.CENTER:
+                if not left_blocked:
+                    commands.append(
+                        NavigationCommand(
+                            action=NavigationAction.MOVE_LEFT,
+                            message=f"Water ahead: {best_water.label}. Move left to avoid.",
+                            priority=PRIORITY_WARNING,
+                            speak=True,
+                        )
+                    )
+                elif not right_blocked:
+                    commands.append(
+                        NavigationCommand(
+                            action=NavigationAction.MOVE_RIGHT,
+                            message=f"Water ahead: {best_water.label}. Move right to avoid.",
+                            priority=PRIORITY_WARNING,
+                            speak=True,
+                        )
+                    )
+                else:
+                    commands.append(
+                        NavigationCommand(
+                            action=NavigationAction.STOP,
+                            message=f"Water ahead: {best_water.label}. No clear path. Stop.",
+                            priority=PRIORITY_CRITICAL,
+                            speak=True,
+                        )
+                    )
+            else:
+                side = "left" if best_water.zone == Zone.LEFT else "right"
+                commands.append(
+                    NavigationCommand(
+                        action=NavigationAction.CAUTION,
+                        message=f"Water on your {side}: {best_water.label}.",
+                        priority=PRIORITY_CAUTION,
+                        speak=True,
+                    )
+                )
 
         # --- Check for potholes ---
         potholes = [d for d in detections if d.category == ObjectCategory.POTHOLE]
@@ -160,24 +257,121 @@ class DecisionEngine:
                         )
                     )
 
-        # --- General obstacle / person / wall in center ---
+        # --- Check for glass objects (breakable / sharp hazard) ---
+        glass_objects = [d for d in detections if d.category == ObjectCategory.GLASS]
+        if glass_objects:
+            best_glass = max(glass_objects, key=lambda g: g.confidence)
+            if best_glass.zone == Zone.CENTER:
+                commands.append(
+                    NavigationCommand(
+                        action=NavigationAction.CAUTION,
+                        message=f"Glass object ahead: {best_glass.label}. Be careful.",
+                        priority=PRIORITY_CAUTION,
+                        speak=True,
+                    )
+                )
+            else:
+                side = "left" if best_glass.zone == Zone.LEFT else "right"
+                commands.append(
+                    NavigationCommand(
+                        action=NavigationAction.CAUTION,
+                        message=f"Glass object on your {side}: {best_glass.label}.",
+                        priority=PRIORITY_INFO,
+                        speak=True,
+                    )
+                )
+
+        # --- Check for utensils (sharp objects warning) ---
+        utensils = [d for d in detections if d.category == ObjectCategory.UTENSIL]
+        sharp_utensils = {"knife", "scissors"}
+        if utensils:
+            sharp = [u for u in utensils if any(s in u.label.lower() for s in sharp_utensils)]
+            if sharp:
+                best_sharp = max(sharp, key=lambda s: s.confidence)
+                commands.append(
+                    NavigationCommand(
+                        action=NavigationAction.CAUTION,
+                        message=f"Sharp object detected: {best_sharp.label}. Be careful.",
+                        priority=PRIORITY_CAUTION,
+                        speak=True,
+                    )
+                )
+
+        # --- Check for traffic signs ---
+        traffic = [d for d in detections if d.category == ObjectCategory.TRAFFIC_SIGN]
+        if traffic:
+            for t in traffic:
+                if "stop sign" in t.label.lower():
+                    commands.append(
+                        NavigationCommand(
+                            action=NavigationAction.STOP,
+                            message="Stop sign detected. Stop and look around.",
+                            priority=PRIORITY_WARNING,
+                            speak=True,
+                        )
+                    )
+                elif "traffic light" in t.label.lower():
+                    commands.append(
+                        NavigationCommand(
+                            action=NavigationAction.CAUTION,
+                            message="Traffic light ahead. Check signal before crossing.",
+                            priority=PRIORITY_WARNING,
+                            speak=True,
+                        )
+                    )
+                elif "fire hydrant" in t.label.lower():
+                    side = "left" if t.zone == Zone.LEFT else ("right" if t.zone == Zone.RIGHT else "ahead")
+                    commands.append(
+                        NavigationCommand(
+                            action=NavigationAction.CAUTION,
+                            message=f"Fire hydrant on your {side}.",
+                            priority=PRIORITY_INFO,
+                            speak=True,
+                        )
+                    )
+
+        # --- Check for doors ---
+        doors = [d for d in detections if d.category == ObjectCategory.DOOR]
+        if doors:
+            best_door = max(doors, key=lambda d: d.confidence)
+            commands.append(
+                NavigationCommand(
+                    action=NavigationAction.CAUTION,
+                    message=f"Door detected {best_door.zone.value} side. Watch for opening.",
+                    priority=PRIORITY_CAUTION,
+                    speak=True,
+                )
+            )
+
+        # --- Check for windows (glass hazard) ---
+        windows = [d for d in detections if d.category == ObjectCategory.WINDOW]
+        if windows:
+            for w in windows:
+                if w.zone == Zone.CENTER:
+                    commands.append(
+                        NavigationCommand(
+                            action=NavigationAction.CAUTION,
+                            message="Glass window ahead. Be careful.",
+                            priority=PRIORITY_CAUTION,
+                            speak=True,
+                        )
+                    )
+
+        # --- General blocking obstacles in center ---
+        # (furniture, appliances, walls, obstacles, doors, plants, persons)
         center_obstacles = [
             d
             for d in zones_occupied[Zone.CENTER]
-            if d.category
-            in (
-                ObjectCategory.OBSTACLE,
-                ObjectCategory.PERSON,
-                ObjectCategory.WALL,
-            )
+            if d.category in BLOCKING_CATEGORIES
         ]
         if center_obstacles:
-            # Determine which direction is free
+            best_obs = max(center_obstacles, key=lambda o: o.confidence)
+            label = best_obs.label or best_obs.category.value
             if not left_blocked and not right_blocked:
                 commands.append(
                     NavigationCommand(
                         action=NavigationAction.MOVE_LEFT,
-                        message="Obstacle ahead. Move left.",
+                        message=f"{label} ahead. Move left.",
                         priority=PRIORITY_CAUTION,
                         speak=True,
                     )
@@ -186,7 +380,7 @@ class DecisionEngine:
                 commands.append(
                     NavigationCommand(
                         action=NavigationAction.MOVE_LEFT,
-                        message="Obstacle ahead, right side blocked. Move left.",
+                        message=f"{label} ahead, right side blocked. Move left.",
                         priority=PRIORITY_CAUTION,
                         speak=True,
                     )
@@ -195,7 +389,7 @@ class DecisionEngine:
                 commands.append(
                     NavigationCommand(
                         action=NavigationAction.MOVE_RIGHT,
-                        message="Obstacle ahead, left side blocked. Move right.",
+                        message=f"{label} ahead, left side blocked. Move right.",
                         priority=PRIORITY_CAUTION,
                         speak=True,
                     )
@@ -206,6 +400,73 @@ class DecisionEngine:
                         action=NavigationAction.STOP,
                         message="Path blocked on all sides. Stop.",
                         priority=PRIORITY_CRITICAL,
+                        speak=True,
+                    )
+                )
+
+        # --- Electronics on the ground (tripping hazard) ---
+        electronics = [
+            d for d in detections
+            if d.category == ObjectCategory.ELECTRONICS and d.zone == Zone.CENTER
+        ]
+        if electronics:
+            best_elec = max(electronics, key=lambda e: e.confidence)
+            # Only warn if it's low in the frame (likely on ground)
+            if best_elec.bbox[3] > 0.7:
+                commands.append(
+                    NavigationCommand(
+                        action=NavigationAction.CAUTION,
+                        message=f"Object on the ground: {best_elec.label}. Watch your step.",
+                        priority=PRIORITY_CAUTION,
+                        speak=True,
+                    )
+                )
+
+        # --- Food on path (informational/slip hazard) ---
+        food_center = [
+            d for d in zones_occupied[Zone.CENTER]
+            if d.category == ObjectCategory.FOOD
+        ]
+        if food_center:
+            commands.append(
+                NavigationCommand(
+                    action=NavigationAction.CAUTION,
+                    message="Food item on the path. Watch your step.",
+                    priority=PRIORITY_INFO,
+                    speak=True,
+                )
+            )
+
+        # --- Sports equipment on path ---
+        sports_center = [
+            d for d in zones_occupied[Zone.CENTER]
+            if d.category == ObjectCategory.SPORTS
+        ]
+        if sports_center:
+            best_sport = max(sports_center, key=lambda s: s.confidence)
+            commands.append(
+                NavigationCommand(
+                    action=NavigationAction.CAUTION,
+                    message=f"Sports equipment ahead: {best_sport.label}. Watch your step.",
+                    priority=PRIORITY_CAUTION,
+                    speak=True,
+                )
+            )
+
+        # --- Personal items on path (tripping hazard) ---
+        items_center = [
+            d for d in zones_occupied[Zone.CENTER]
+            if d.category == ObjectCategory.PERSONAL_ITEM
+        ]
+        if items_center:
+            best_item = max(items_center, key=lambda i: i.confidence)
+            # Only warn if low in frame
+            if best_item.bbox[3] > 0.6:
+                commands.append(
+                    NavigationCommand(
+                        action=NavigationAction.CAUTION,
+                        message=f"Item on the path: {best_item.label}. Watch your step.",
+                        priority=PRIORITY_INFO,
                         speak=True,
                     )
                 )

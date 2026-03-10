@@ -34,25 +34,25 @@ class ARNavigationApp {
     async init() {
         console.log('[App] Initializing AR Navigation System...');
 
-        // Initialize camera
-        this._updateStep('step-camera', 'Initializing...');
+        // Request camera + GPS permissions in parallel so the browser
+        // shows all prompts at once on a single user gesture.
+        this._updateStep('step-camera', 'Requesting...');
+        this._updateStep('step-gps', 'Requesting...');
+
         const videoEl = document.getElementById('camera-feed');
         const captureCanvas = document.getElementById('capture-canvas');
         await camera.init(videoEl, captureCanvas);
-        const camOk = await camera.start();
-        this._updateStep('step-camera', camOk ? '✓ Ready' : '✗ Failed', camOk);
 
-        // Initialize GPS
-        this._updateStep('step-gps', 'Initializing...');
-        const gpsOk = gpsManager.isSupported();
-        if (gpsOk) {
-            gpsManager.onUpdate = (coords) => this._onGPSUpdate(coords);
-            gpsManager.onError = (err) => console.warn('[GPS]', err.message);
-            gpsManager.start();
-        }
+        // Fire both permission requests simultaneously
+        const [camOk, gpsOk] = await Promise.all([
+            camera.start().catch(() => false),
+            this._initGPS(),
+        ]);
+
+        this._updateStep('step-camera', camOk ? '✓ Ready' : '✗ Failed', camOk);
         this._updateStep('step-gps', gpsOk ? '✓ Ready' : '✗ N/A', gpsOk);
 
-        // Initialize TTS
+        // Initialize TTS (no permission prompt needed)
         this._updateStep('step-voice', 'Initializing...');
         const ttsOk = voiceGuidance.init();
         this._updateStep('step-voice', ttsOk ? '✓ Ready' : '✗ N/A', ttsOk);
@@ -65,12 +65,22 @@ class ARNavigationApp {
         this._updateStep('step-ai', 'Connecting...');
         this._setupWebSocket();
 
-        // Show start button
-        document.getElementById('start-btn').classList.remove('hidden');
-        document.getElementById('loading-status').textContent = 'System ready. Tap Start.';
-
         // Listen to settings changes
         this._setupSettings();
+
+        // Auto-start navigation – no second tap required
+        this.start();
+    }
+
+    /**
+     * Initialize GPS and return success boolean (used in parallel init).
+     */
+    async _initGPS() {
+        if (!gpsManager.isSupported()) return false;
+        gpsManager.onUpdate = (coords) => this._onGPSUpdate(coords);
+        gpsManager.onError = (err) => console.warn('[GPS]', err.message);
+        gpsManager.start();
+        return true;
     }
 
     /**
@@ -445,13 +455,28 @@ class ARNavigationApp {
 // ─── Bootstrap ──────────────────────────────────────────────────────
 const app = new ARNavigationApp();
 
-// Auto-initialize when DOM is ready
+// Wait for a user gesture before requesting permissions
 document.addEventListener('DOMContentLoaded', () => {
-    app.init().catch(err => {
-        console.error('[App] Init failed:', err);
-        document.getElementById('loading-status').textContent =
-            'Initialization failed. Please reload.';
-    });
+    const splash = document.getElementById('splash-screen');
+
+    function onUserGesture() {
+        // Remove listeners so init only runs once
+        splash.removeEventListener('click', onUserGesture);
+
+        // Hide splash, show loading screen
+        splash.classList.add('hidden');
+        document.getElementById('loading-screen').classList.remove('hidden');
+
+        // Request all permissions at once and auto-start
+        app.init().catch(err => {
+            console.error('[App] Init failed:', err);
+            document.getElementById('loading-status').textContent =
+                'Initialization failed. Please reload.';
+        });
+    }
+
+    // Any click/tap on the splash screen triggers init
+    splash.addEventListener('click', onUserGesture);
 });
 
 // Clean up on page unload

@@ -3,24 +3,24 @@
 # ============================================================
 
 # --- Web Framework ---
-fastapi==0.129.0
-uvicorn[standard]==0.40.0
-websockets==16.0
-python-multipart==0.0.22
+fastapi
+uvicorn[standard]
+websockets
+python-multipart
 
 # --- AI & Computer Vision ---
-ultralytics==8.4.14
-opencv-python-headless==4.13.0.92
-numpy==2.4.2
-torch==2.10.0
-torchvision==0.25.0
+ultralytics
+opencv-python-headless
+numpy
+torch
+torchvision
 
 # --- Data Models ---
-pydantic==2.12.5
+pydantic
 
 # --- Utilities ---
-python-dotenv==1.2.1
+python-dotenv
 
 # --- Testing ---
-pytest==9.0.2
-httpx==0.28.1
+pytest
+httpx

@@ -11,8 +11,19 @@
     <link rel="manifest" href="/static/manifest.json">
 </head>
 <body>
+    <!-- Splash Screen – tap anywhere to grant permissions -->
+    <div id="splash-screen" class="splash-screen">
+        <div class="splash-content">
+            <div class="splash-icon">📷</div>
+            <h1>AR Navigation</h1>
+            <p>Camera &amp; location access is required</p>
+            <button id="splash-btn" class="start-btn">Tap to Start</button>
+            <p class="splash-hint">or tap anywhere on screen</p>
+        </div>
+    </div>
+
     <!-- Loading Screen -->
-    <div id="loading-screen" class="loading-screen">
+    <div id="loading-screen" class="loading-screen hidden">
         <div class="loading-content">
             <div class="loading-spinner"></div>
             <h1>AR Navigation</h1>
@@ -39,9 +50,7 @@
                     <span class="step-status">...</span>
                 </div>
             </div>
-            <button id="start-btn" class="start-btn hidden" onclick="app.start()">
-                Start Navigation
-            </button>
+            <!-- App auto-starts after permissions are granted -->
         </div>
     </div>
 

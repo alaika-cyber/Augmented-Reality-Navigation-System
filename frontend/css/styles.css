@@ -40,6 +40,60 @@ html, body {
 }
 
 /* ================================================================
+   Splash Screen
+   ================================================================ */
+
+.splash-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+    z-index: 1100;
+    cursor: pointer;
+}
+
+.splash-content {
+    text-align: center;
+    padding: 2rem;
+}
+
+.splash-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.15); opacity: 0.8; }
+}
+
+.splash-content h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(90deg, var(--primary), var(--info));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.splash-content p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+}
+
+.splash-hint {
+    font-size: 0.8rem !important;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    margin-top: 1rem !important;
+}
+
+/* ================================================================
    Loading Screen
    ================================================================ */
 
